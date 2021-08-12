@@ -1,0 +1,139 @@
+<link rel="import" href="../shared/audio-picker.html">
+
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+<script>if(jQuery) jQuery.noConflict();</script>
+<script src="../../lib/jquery-knob/dist/jquery.knob.min.js"></script>
+
+<dom-module id="auralization-test">
+    <template>
+        <style>
+            :host {
+                display: block;
+            }
+
+            :host #knobsWrap {
+                text-align: center;
+                margin: 10px;
+            }
+
+            :host #knobsWrap > div {
+                display: inline-block;
+                margin: 20px;
+            }
+
+            :host #knobsWrap > div > label {
+                font-size: 40px;
+                font-style: italic;
+                font-family: Baskerville, "Playfair Display", "Times New Roman", serif;
+            }
+        </style>
+       <p>{{t('Choose a source to start the auralization demo.')}}</p>
+        <audio-picker id="audioPicker"></audio-picker>
+
+        <section class="card hidden" id="secSourcePos">
+            <header><span>{{t('Virtual Source Position')}}</span><span id="hrtfState"><paper-spinner active id="spinnerHrtfLoading"></paper-spinner></header>
+            <div id="knobsWrap">
+                <div>
+                    <input class="knob" id="knobAlpha" data-width="240" data-height="240" data-cursor=true data-fgColor="#2ecc71" data-thickness=.3 value="0" data-max=359 data-rotation="anticlockwise"><br />
+                    <label for="knobAlpha" style="color: #2ecc71;">&alpha;</label>
+                </div>
+                <div>
+                    <input class="knob" id="knobBeta" data-width="240" data-height="240" data-angleOffset=0 data-angleArc=135 data-cursor=true data-fgColor="#4aa3df" data-rotation="anticlockwise" value="90" data-min=45 data-max=180><br />
+                    <label for="knobBeta" style="color: #4aa3df;">&beta;</label>
+                </div>
+            </div>	
+        </section>
+		
+		
+		<section id="appletInfo">
+			<p>Please <b>use headphones</b>!
+			</p><p>
+This applet synthesises a virtual sound source using an arbitrary signal and can position it around your head. Head-Related Transfer Functions (HRTF) describe how a sound will arrive at the ear. Due to diffraction and reflection at the head, pinna and torso sound waves are filtered depending on the angle of arrival. &alpha; is the direction in the horizontal plane, &beta; represents the sound source elevation. Furthermore the differences in level and time of the arriving sound are encoded in the HRTF. The app uses a set of HRTF-pairs, for discrete &alpha; and &beta; values.
+Try out: First, set  to  and change the elevation angle  Then set  to  and change elevation angles.
+
+<!--
+			This applet synthesises a virtual sound source using an arbitrary signal and can position it around your head.
+			Head-Related Transfer Functions (HRTF) describe how a sound will arrive at the outer end of the auditory canal. Due to diffraction and reflection at the head, pinna and torso sound waves are filtered depending on the angle of arrival.
+			&alpha; is the direction in the horizontal plane, &beta; represents the sound source elevation.
+			The app uses a set of HRTF-pairs, for discrete  &alpha; and &beta; values.
+			-->
+			</p>
+		</section>
+    </template>
+    <script>
+    'use strict';
+    AppletComponent({
+        is: 'auralization-test',
+        hrtfFilter: null,
+        alpha: 0,
+        beta: 0,
+        filterIndex: -1,
+        filterUpdate: function () {
+            if (!this.hrtfFilter)
+                return;
+            var filtID = this.hrtfFilter.getFilterIndex(this.alpha, this.beta);
+            if (filtID === this.filterIndex)
+                return;
+
+            this.filterIndex = filtID;
+            this.convolver.changeFilter(this.hrtfFilter.getFilter(filtID));
+        },
+        ready: function () {
+            this.alpha = 0;
+            this.beta = 90;
+
+            this.$.audioPicker.addEventListener('audio-change', (function (e) {
+                if (this.currentSourceNode) {
+                    this.currentSourceNode.disconnect();
+                    this.currentSourceNode = null;
+                }
+
+                if (e.detail) {
+                    this.currentSourceNode = e.detail;
+                    this.currentSourceNode.connect(this.merger, 0, 0);
+                    this.currentSourceNode.connect(this.merger, 0, 1);
+					
+                    this.$.secSourcePos.classList.remove('hidden');
+                }
+            }).bind(this));
+
+            jQuery(this.$.knobAlpha).knob({
+                change: (function (value) {
+                    this.alpha = value;
+                    this.filterUpdate();
+                }).bind(this)
+            });
+
+            jQuery(this.$.knobBeta).knob({
+                change: (function (value) {
+                    this.beta = value;
+                    this.filterUpdate();
+                }).bind(this)
+            });
+        },
+        appletStart: function (context, firstStart) {
+            var ac = this.audioCtx = app.createAudioContext();
+            if(!ac) return;
+            
+            this.merger = ac.createChannelMerger(2);            
+            this.convolver = new FadingConvolver(ac, 6);
+			
+			this.convolver.connectInput(this.merger);
+			//this.merger.connect(ac.destination);
+            this.convolver.connect(ac.destination);
+
+            WebDaff.loadHrtf(WebDaff.getDefaultHrtfURL(ac.sampleRate, app.platform.isMobile), ac, (function (hrtf) { // TODO: mobile hrtf
+                this.hrtfFilter = hrtf;
+                this.filterUpdate();
+				this.$.spinnerHrtfLoading.active = false;
+				this.$.hrtfState.innerText = this.t('HRTF loaded');
+            }).bind(this), (function (err) {
+				this.$.spinnerHrtfLoading.active = false;
+				this.$.hrtfState.innerText = this.t('Error');
+                app.errorMsg(err);
+            }).bind(this));
+        }
+    });
+    </script>
+</dom-module>
